@@ -1,0 +1,4 @@
+This is a linear programming algorithm for solving a traveling saleswoman (salesman)
+problem.  It is written in Python and uses Pyomo, an open-source software package.
+Pyomo, in turn, calls an open-source GLPK solver to find an optimal solution. The script
+requires .dat file with input data and has logic to avoid 1-, 2-, and 3-node subtours.
