@@ -1,55 +1,72 @@
-#Explicit importing makes it more clear what a user needs to define
-#versus what is included within the pyomo library
-from coopr.pyomo import (ConcreteModel, Objective, Var, NonNegativeIntegers,
-                              minimize, Constraint)
+from coopr.pyomo import *
 
-#Set nodes
-Locations = ['Apple', 'Cisco', 'CVS', 'Ebay']
+# create a model root
+model = AbstractModel()
 
-#Set arc lengths
+# set bounds:
+# n - number of nodes
+# max_out - number of arcs out of each node
+# max_in - number of arcs in each node
+# arc_to_self - number of arcs to self allowed
+# min_arcs_between_subsets - number of arcs between any subset of nodes
+model.n = Param(within=NonNegativeIntegers)
+model.max_out = Param(within=NonNegativeIntegers)
+model.max_in = Param(within=NonNegativeIntegers)
+model.arc_to_self = Param(within=NonNegativeIntegers)
 
-'''Distances = {('Apple','Apple'):0,
-('Apple','Cisco'):0.138202084184728,
-('Apple','CVS'):0.443699720914948,
-('Apple','Ebay'):0.138202084184728,
-('Cisco','Apple'):0.138202084184728,
-('Cisco','Cisco'):0,
-('Cisco','CVS'):0.426320750769892,
-('Cisco','Ebay'):0,
-('CVS','Apple'):0.443699720914948,
-('CVS','Cisco'):0.426320750769892,
-('CVS','CVS'):0,
-('CVS','Ebay'):0.426320750769892,
-('Ebay','Apple'):0.138202084184728,
-('Ebay','Cisco'):0,
-('Ebay','CVS'):0.426320750769892,
-('Ebay','Ebay'):0}'''
+# create index sets:
+# i = 1,..., n
+# j = 1,..., n
+# i,j for each i and j combination
+model.I = RangeSet(0, model.n)
+model.J = RangeSet(0, model.n)
+model.IJ = model.I * model.J
 
-#Set OnRoute Matrix
+# create distance parameter for each i and j combination
+model.d = Param(model.I, model.J)
 
-OnRoute = [0,0,0,0,
-           0,0,0,0,
-           0,0,0,0,
-           0,0,0,0]
+# declare a variable indexed by the set IJ
+model.x = Var(model.IJ, within=Binary)
 
-#Set Distance Matrix
-Distances = [0.00,0.14,0.44,0.14,
-             0.14,0.00,0.43,0.00,
-             0.44,0.43,0.00,0.43,
-             0.14,0.00,0.43,0.00]
+# declare objective function Dij * Xij
+def obj_expression(model):
+    return summation(model.d, model.x)
 
-#Concrete Model
-model = ConcreteModel()
+# declare objective variable
+model.OBJ = Objective(rule=obj_expression)
 
-#Decision Variables
-model.OnRoute = Var(OnRoute, within=NonNegativeIntegers)
-
-#Objective
-model.obj = Objective(expr=
-            sum(Distances[i] * model.OnRoute[i] for i in range(len(Distances))),
-            sense = minimize)
+# declare constraint: one and only one arc out of each node
+def xi_constraint_rule(model, i):
+    return sum(model.x[i,j] for j in model.J) >= model.max_out
+model.xiConstraint = Constraint(model.I, rule=xi_constraint_rule)
 
 
-#test
+# declare constraint: one and only one arc in each node
+def xj_constraint_rule(model, j):
+    return sum(model.x[i,j] for i in model.I) >= model.max_in
+model.xjConstraint = Constraint(model.J, rule=xj_constraint_rule)
 
-print model.OnRoute
+
+# declare constraint: no arcs to self
+def arc_to_self_constraint_rule(model, i):
+    return model.x[i,i] == model.arc_to_self
+model.arcToSelfConstraint = Constraint(model.I, rule=arc_to_self_constraint_rule)
+
+
+# declare constraint: no 2-node subtours
+def sub2_init(model):
+    return ((i,j) for i in model.I for j in model.I if i!=j)
+model.sub2 = Set(dimen=2, initialize=sub2_init)
+
+def sub2_rule(model,i,j):
+    return model.x[i,j] + model.x[j,i] <= 1
+model.sub2contraint = Constraint(model.sub2, rule=sub2_rule)
+
+# declare constraint: no 3-node subtours
+def sub3_init(model):
+    return ((i,j,k) for i in model.I for j in model.I for k in model.I if (i!=j and i!=k and j!=k))
+model.sub3 = Set(dimen=3, initialize=sub3_init)
+
+def sub3_rule(model,i,j,k):
+    return model.x[i,j] + model.x[j,i] + model.x[i,k] + model.x[k,i] + model.x[k,j] + model.x[j,k] <= 2
+model.sub3constraint = Constraint(model.sub3, rule=sub3_rule)
